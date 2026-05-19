@@ -92,13 +92,6 @@ EOF
 
 Tell the user: "Setup complete! You can now import content anytime. Which project to import into will be chosen dynamically each time — no need to update this config when you add new projects."
 
-Then clean up the test file:
-
-```bash
-# Optionally remove the test clip's source file and wiki output
-# (the test clip is harmless to keep, but you can offer to clean it up)
-```
-
 ---
 
 ## Import Steps
@@ -123,17 +116,14 @@ curl -s "$CLIP_URL/projects"
 
 Returns all projects with their paths. The `current: true` project is the active one.
 
-How to select the target project:
-- If the user specifies a project name → find its path from the list
-- If the user says "current" or doesn't specify → use the `current: true` entry
-- If the user wants a different project → switch with `POST /project`:
-  ```bash
-  curl -s -X POST "$CLIP_URL/project" \
-    -H 'Content-Type: application/json' \
-    -d '{"path":"/path/to/desired/project"}'
-  ```
+**Always use `projectPath` in the clip request** — this is the primary mechanism. You do NOT need to call `POST /project` unless the user wants to change the app UI's active project.
 
-The project path is passed as `projectPath` in the clip request. You do NOT need to switch the current project — just pass the correct path.
+How to select the target project:
+- If the user specifies a project name → find its `path` from the list by name
+- If the user says "current" or doesn't specify → use the `current: true` entry's path
+- If the user wants to switch the app's active project (rare) → call `POST /project`
+
+**Project name matching:** Match case-insensitively. If no exact match, look for partial matches and ask the user to confirm. Example: user says "work" → matches "Work Notes".
 
 This design means:
 - New projects appear automatically (no config update needed)
@@ -202,11 +192,18 @@ cat "<projectPath>/.llm-wiki/ingest-cache.json"
 
 Wait between checks using a separate `terminal("sleep 30")` call — never use `time.sleep()` inside execute_code.
 
+**If ingest is stuck at "processing" after 3 minutes:** Check ingest-cache.json for the entry. If it shows no `filesWritten`, the ingest likely failed after exhausting retries (3 attempts). You can re-POST the same clip to retry. If it keeps failing, the content may be too long or the LLM model may be hitting output limits — suggest splitting the content into smaller clips.
+
 ---
 
 ## Content Acquisition Methods
 
 Choose based on the source type:
+
+**Decision tree:** If the user provides a URL → Web articles. If the user provides a file path → Local files. If the user says "clipboard" or "paste" → Clipboard. If the user pastes text directly → Plain text. If unclear → ask: "Is this from a URL, a file, or would you like to paste the content?"
+
+### Title derivation
+If the user doesn't specify a title: use the first `# heading` in the content, or the filename for local files, or ask the user. The `url` field is optional — pass an empty string `""` if there's no source URL.
 
 ### Local files
 Read with `read_file`, pass content to POST /clip.
@@ -284,10 +281,11 @@ Project paths are NOT stored here — they are fetched dynamically from `GET /pr
 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
-| Connection refused on /status | App not running | Open LLM Wiki app, wait a few seconds |
+| Connection refused on /status | App not running | Open LLM Wiki app, wait a few seconds, then retry /status |
 | /status works but /projects empty | No projects created | Create a project in LLM Wiki UI first |
 | POST /clip returns error | Invalid JSON or missing field | Ensure title, content, and projectPath are provided |
-| Queue stuck at "processing" | LLM model timeout or error | Wait 2-3 minutes; the app auto-retries up to 3 times |
+| POST /clip returns project not found | Wrong projectPath | Re-fetch projects with GET /projects and use exact path |
+| Queue stuck at "processing" | LLM model timeout or error | Wait 2-3 minutes; the app auto-retries up to 3 times. See Step 5 for detailed recovery |
 | "Generation failed" in logs | Model output exceeded limits | Content may be too long; try splitting into smaller clips |
 | 404 on all endpoints | Wrong port | Check if user changed the default port in LLM Wiki settings |
 

@@ -1,0 +1,23 @@
+{
+  "skill_name": "llm-wiki-import",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "帮我把这篇文章导入 LLM Wiki: https://zread.ai/Panniantong/Agent-Reach",
+      "expected_output": "Agent should navigate to the URL, extract content via browser_console, get project list from clip server, and POST /clip to import. Should check for ~/.llm-wiki-import.json config first.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "prompt": "把 ~/Downloads/meeting-notes.md 这个文件导入到我的知识库",
+      "expected_output": "Agent should read the local file, check config, get projects from API, and POST /clip with the file content. Should use current project if user doesn't specify.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "我有多个知识库项目，帮我把这段内容导入到 Work Notes 项目：人工智能（AI）是计算机科学的一个分支，旨在创建能够执行通常需要人类智能的任务的系统。",
+      "expected_output": "Agent should get project list, find 'Work Notes' project path, and POST /clip with the content to that specific project. Should NOT hardcode any paths.",
+      "files": []
+    }
+  ]
+}
