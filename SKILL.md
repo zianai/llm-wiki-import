@@ -1,6 +1,6 @@
 ---
 name: llm-wiki-import
-description: Import articles, web pages, and local files into LLM Wiki (Tauri desktop app) via the clip server HTTP API. Use this skill whenever a user wants to import content into their LLM Wiki knowledge base, add articles to their wiki, save web pages for later, clip content from the browser, or manage LLM Wiki projects. Also use when the user mentions "knowledge base", "wiki import", "clip to wiki", or asks to save content for AI-powered retrieval — even if they don't explicitly say "LLM Wiki".
+description: Import or save content into wiki/knowledge base systems. Use when user wants to move articles, web pages, files, clipboard content, or notes INTO a personal knowledge management tool — especially LLM Wiki, but also generic wikis or AI-powered knowledge systems. Trigger on intent indicators like: "import to wiki", "save to knowledge base", "add to my wiki", "clip article", "migrate notes", "backup to wiki". Watch for explicit mentions (LLM Wiki, Tauri wiki) AND generic wiki/knowledge base language. Works across English and Chinese: 导入、保存、迁移、知识库、剪贴板. Focus: the act of bringing external content INTO a knowledge system. Not for: deploying wiki software, creating new wiki projects, organizing existing notes, or general programming.
 version: 3.0
 ---
 
