@@ -1,7 +1,7 @@
 ---
 name: llm-wiki-import
 description: Import or save content into wiki/knowledge base systems. Use when user wants to move articles, web pages, files, clipboard content, or notes INTO a personal knowledge management tool — especially LLM Wiki, but also generic wikis or AI-powered knowledge systems. Trigger on intent indicators like "import to wiki", "save to knowledge base", "add to my wiki", "clip article", "migrate notes", "backup to wiki". Watch for explicit mentions (LLM Wiki, Tauri wiki) AND generic wiki/knowledge base language. Works across English and Chinese — 导入、保存、迁移、知识库、剪贴板. Focus on the act of bringing external content INTO a knowledge system. Not for deploying wiki software, creating new wiki projects, organizing existing notes, or general web browsing.
-version: 3.1
+version: 3.2
 ---
 
 # LLM Wiki Content Import
@@ -184,6 +184,8 @@ cat "<projectPath>/.llm-wiki/ingest-queue.json"
 # entries with "failed" = error occurred
 ```
 
+**Two queue entries per clip is normal:** one `POST /clip` shows up as **two** entries in the queue (the source → entities steps chain-trigger each other), so seeing 2 entries for a single clip is expected — not a duplicate submission. A clip counts as done only when both entries are consumed AND a new entry with `filesWritten` appears in ingest-cache.json.
+
 **Verification shortcut — check the cache, not just the queue:** an empty queue does NOT prove your clip was processed. Look for your source file's key in `<projectPath>/.llm-wiki/ingest-cache.json` (structure is `{"entries": {"<filename>": {"hash", "timestamp", "filesWritten": [...]}}}`). If the latest cache timestamp is days old, the ingest worker is stalled — see Troubleshooting.
 
 For detailed results, check the ingest cache:
@@ -237,7 +239,7 @@ These are common patterns — adapt based on the actual page structure:
 |-----------|-------------------|
 | Blog/article | `article` or `main` element |
 | Documentation | `.content` or `article` |
-| Twitter/X post | The `browser_navigate` snapshot already contains the full tweet text (page title + text nodes), the quoted tweet, and top replies — capture from there. `[data-testid="tweetText"]` often returns NOT FOUND without login; fallback to `document.body.innerText`. X posts are short, so expand into structured markdown (source attribution, quoted-tweet context, notable replies) to give the ingest pipeline enough substance |
+| Twitter/X post | The `browser_navigate` snapshot already contains the full tweet text (page title + text nodes), the quoted tweet, and top replies — capture from there. `[data-testid="tweetText"]` often returns NOT FOUND without login; fallback to `document.body.innerText`. X posts are short, so expand into structured markdown (source attribution, quoted-tweet context, notable replies) to give the ingest pipeline enough substance. **X long-form (article):** if the syndication API (`cdn.syndication.twimg.com/tweet-result?id=<ID>`) response contains an `article` key, the body is an X long-form post — that API only returns `title` + `preview_text` (~100 chars) + `rest_id`, not the full text. Build the body URL `https://x.com/i/article/<rest_id>`, open it in a background tab via the CDP proxy (logged-in Chrome), and capture the rendered `document.body.innerText` in ~3800-char slices, concatenated. Truncation: posts older than ~24h render no timestamp row, so timestamp-regex truncation fails — instead cut the trailing author profile card at `text.rfind('<Author>\n@<handle>\nFollow')` (use rfind, not find — the author name also appears at the top of the body). Full extraction discipline (slice stitching, dead-end list) lives in the x-content-extraction skill |
 | Paywalled sites | Try browser first; if blocked, ask user for text |
 
 Always prefer `browser_console` JS extraction over `browser_snapshot` — snapshot truncates at ~8000 chars and misses full article content.

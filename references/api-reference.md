@@ -254,21 +254,35 @@ After a successful clip, the project directory looks like:
 
 ## Ingest Queue Format
 
-`ingest-queue.json` contains an array of IngestTask objects:
+`ingest-queue.json` contains an array of IngestTask objects. Entry structure as observed on 2026-09-16 (app v0.1.0):
 
 ```json
 [
   {
-    "projectId": "uuid-here",
-    "filePath": "raw/sources/article-slug-20260519.md",
+    "id": "ingest-<ms>-<rand>",
+    "projectId": "<uuid>",
+    "sourcePath": "raw/sources/<slug>-<YYYYMMDD>.md",
+    "folderContext": "",
     "status": "pending",
-    "retryCount": 0,
-    "addedAt": 1778685859381
+    "addedAt": 1778685859381,
+    "error": null,
+    "retryCount": 0
   }
 ]
 ```
 
-Status values: `pending` → `processing` → (consumed/removed)
+| Field | Type | Description |
+|-------|------|-------------|
+| id | string | Task ID in the form `ingest-<epoch-ms>-<random>` |
+| projectId | string | UUID of the target project |
+| sourcePath | string | Source file path, relative to the project root |
+| folderContext | string | Folder context hint (empty string for clipped content) |
+| status | string | One of `pending`, `processing`, `failed` |
+| addedAt | number | Epoch milliseconds when the task was enqueued |
+| error | string \| null | Failure message; `null` until an attempt fails |
+| retryCount | number | Failed-attempt counter |
+
+Status values: `pending` → `processing` → (consumed/removed); `failed` marks an entry that errored.
 
 On failure: `retryCount` increments (max 3 retries), then the task is removed.
 
