@@ -1,7 +1,7 @@
 ---
 name: llm-wiki-import
-description: Import or save content into wiki/knowledge base systems. Use when user wants to move articles, web pages, files, clipboard content, or notes INTO a personal knowledge management tool — especially LLM Wiki, but also generic wikis or AI-powered knowledge systems. Trigger on intent indicators like: "import to wiki", "save to knowledge base", "add to my wiki", "clip article", "migrate notes", "backup to wiki". Watch for explicit mentions (LLM Wiki, Tauri wiki) AND generic wiki/knowledge base language. Works across English and Chinese: 导入、保存、迁移、知识库、剪贴板. Focus: the act of bringing external content INTO a knowledge system. Not for: deploying wiki software, creating new wiki projects, organizing existing notes, or general programming.
-version: 3.0
+description: Import or save content into wiki/knowledge base systems. Use when user wants to move articles, web pages, files, clipboard content, or notes INTO a personal knowledge management tool — especially LLM Wiki, but also generic wikis or AI-powered knowledge systems. Trigger on intent indicators like "import to wiki", "save to knowledge base", "add to my wiki", "clip article", "migrate notes", "backup to wiki". Watch for explicit mentions (LLM Wiki, Tauri wiki) AND generic wiki/knowledge base language. Works across English and Chinese — 导入、保存、迁移、知识库、剪贴板. Focus on the act of bringing external content INTO a knowledge system. Not for deploying wiki software, creating new wiki projects, organizing existing notes, or general web browsing.
+version: 3.1
 ---
 
 # LLM Wiki Content Import
@@ -184,6 +184,8 @@ cat "<projectPath>/.llm-wiki/ingest-queue.json"
 # entries with "failed" = error occurred
 ```
 
+**Verification shortcut — check the cache, not just the queue:** an empty queue does NOT prove your clip was processed. Look for your source file's key in `<projectPath>/.llm-wiki/ingest-cache.json` (structure is `{"entries": {"<filename>": {"hash", "timestamp", "filesWritten": [...]}}}`). If the latest cache timestamp is days old, the ingest worker is stalled — see Troubleshooting.
+
 For detailed results, check the ingest cache:
 ```bash
 cat "<projectPath>/.llm-wiki/ingest-cache.json"
@@ -235,7 +237,7 @@ These are common patterns — adapt based on the actual page structure:
 |-----------|-------------------|
 | Blog/article | `article` or `main` element |
 | Documentation | `.content` or `article` |
-| Twitter/X post | `[data-testid="tweetText"]` |
+| Twitter/X post | The `browser_navigate` snapshot already contains the full tweet text (page title + text nodes), the quoted tweet, and top replies — capture from there. `[data-testid="tweetText"]` often returns NOT FOUND without login; fallback to `document.body.innerText`. X posts are short, so expand into structured markdown (source attribution, quoted-tweet context, notable replies) to give the ingest pipeline enough substance |
 | Paywalled sites | Try browser first; if blocked, ask user for text |
 
 Always prefer `browser_console` JS extraction over `browser_snapshot` — snapshot truncates at ~8000 chars and misses full article content.
@@ -286,6 +288,7 @@ Project paths are NOT stored here — they are fetched dynamically from `GET /pr
 | POST /clip returns error | Invalid JSON or missing field | Ensure title, content, and projectPath are provided |
 | POST /clip returns project not found | Wrong projectPath | Re-fetch projects with GET /projects and use exact path |
 | Queue stuck at "processing" | LLM model timeout or error | Wait 2-3 minutes; the app auto-retries up to 3 times. See Step 5 for detailed recovery |
+| POST /clip returns ok but ingest never fires (queue stays `[]`, no new entry in ingest-cache.json) | App-side ingest worker silently stalled — the app can keep serving /clip for days while the pipeline is dead. Diagnose by comparing the latest timestamp in ingest-cache.json; if it is days old, the worker is stalled | Restart the LLM Wiki app. On startup it re-scans `raw/sources/` and reprocesses the backlog. Do NOT re-POST as a retry — it writes a duplicate `-2` file without triggering ingest; delete duplicates |
 | "Generation failed" in logs | Model output exceeded limits | Content may be too long; try splitting into smaller clips |
 | 404 on all endpoints | Wrong port | Check if user changed the default port in LLM Wiki settings |
 
@@ -302,6 +305,9 @@ Check app process: `ps aux | grep llm-wiki` (process name is `llm-wiki`)
 - Some sites block automated browsing (captcha, login wall) — fall back to asking the user to copy-paste
 - The ingest pipeline can fail if content is too short (< 100 chars) or triggers model output limits — provide meaningful content
 - For content with special characters (quotes, unicode), use the Python subprocess approach rather than inline shell strings
+- Python subprocess.run(["curl", ..., "-d", large_json]) can silently return empty stdout for large payloads (>2KB). Write payload to a temp file with `write_file` and use `curl -d @/tmp/payload.json` instead — this is far more reliable than passing JSON as a subprocess argument
+- An empty ingest queue proves nothing by itself — a stalled worker processes nothing and the queue stays `[]`. The real success signal is a NEW entry with `filesWritten` in ingest-cache.json
+- Re-POSTing a clip to "retry" a stalled pipeline creates duplicate `-2`/`-3` source files — restart the app instead, then delete duplicates
 
 ## Fallback: Direct Filesystem Write
 
