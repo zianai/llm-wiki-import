@@ -59,7 +59,7 @@ List all knowledge base projects known to the app.
 }
 ```
 
-The `current: true` field marks the currently active project in the app UI.
+The `current: true` field marks the clip server's current project. A programmatic server-side switch alone does not establish that the frontend has opened that project; see the version-specific processing notes below.
 
 **Usage:**
 ```bash
@@ -91,7 +91,7 @@ curl -s http://127.0.0.1:19827/project
 
 ### POST /project
 
-Switch the current project in the app.
+Set the clip server's current project path. In the implementation linked below, this updates server-side state; it does not itself open the project in the frontend.
 
 **Request:**
 ```json
@@ -118,7 +118,7 @@ curl -s -X POST http://127.0.0.1:19827/project \
 
 ### POST /clip
 
-Import content into a project. This is the main endpoint — it writes the file and auto-triggers the ingest pipeline.
+Import content into a project. This endpoint writes the raw file and publishes a pending clip. Frontend enqueueing and ingest depend on the active project, LLM configuration and worker state; an ok response confirms acceptance, not generated wiki pages.
 
 **Request:**
 ```json
@@ -161,10 +161,12 @@ Import content into a project. This is the main endpoint — it writes the file 
    
    Full markdown content here...
    ```
-4. Enqueues an IngestTask in `{projectPath}/.llm-wiki/ingest-queue.json`
-5. Auto-triggers the two-step chain-of-thought ingest pipeline:
-   - Step 1: Source → generates a wiki source summary
-   - Step 2: Source → generates entities and concepts
+4. Publishes the clip for the frontend watcher, which enqueues eligible clips in the ingest queue.
+5. When the project and worker are ready, the two-step ingest pipeline runs:
+   - Step 1: Analyze the source and produce analysis used by generation.
+   - Step 2: Generate wiki files, including the source summary and applicable entity/concept pages.
+
+Two queue records for one clip were observed in prior runs. This does not establish a fixed record count or a one-to-one mapping between queue records and the two LLM stages.
 
 **Deduplication:** If a file with the same name already exists, a numeric suffix is appended (-2, -3, ...).
 
@@ -175,7 +177,7 @@ curl -s -X POST http://127.0.0.1:19827/clip \
   -d '{"title":"My Article","url":"https://example.com","content":"# My Article\n\nContent here.","projectPath":"/path/to/project"}'
 ```
 
-For content with special characters, use the Python approach (see SKILL.md).
+实际投递使用 SKILL.md 的文件式路径：JSON 编码后用 `write_file` 落盘，再 `curl -d @文件`；不使用长内联 JSON 或 Python subprocess 提交。传输编码不改变解码后的 content，不属于内容加工。
 
 ---
 
@@ -231,12 +233,12 @@ If the user has configured a different port in LLM Wiki settings, update `clipSe
 
 ## File System Structure
 
-After a successful clip, the project directory looks like:
+After clip acceptance and verified generation, an example project layout is:
 
 ```
 <projectPath>/
 ├── .llm-wiki/
-│   ├── ingest-queue.json    # Current queue state ([] when all done)
+│   ├── ingest-queue.json    # Current queue state (empty does not prove success)
 │   └── ingest-cache.json    # History of processed items
 ├── raw/
 │   └── sources/
@@ -284,11 +286,11 @@ After a successful clip, the project directory looks like:
 
 Status values: `pending` → `processing` → (consumed/removed); `failed` marks an entry that errored.
 
-On failure: `retryCount` increments (max 3 retries), then the task is removed.
+Retry and retention behavior is version-dependent. In the fixed source revision linked below, exhausted tasks remain failed and restored work can require Resume; do not assume that disappearance from the queue means success or that restarting resumes all work automatically.
 
 ## Ingest Cache Format
 
-`ingest-cache.json` records all successfully processed items:
+`ingest-cache.json` 记录缓存的生成结果。本 skill 的投递成功判据是：本次源文件对应的记录相对提交前基线新增或更新，且 `filesWritten` 为非空列表。该口径不等于摘要完整、内容正确或所有后台任务结束：
 
 ```json
 {
@@ -305,3 +307,18 @@ On failure: `retryCount` increments (max 3 retries), then the task is removed.
   }
 }
 ```
+
+For the documented source-identity format, normalize the POST response path and remove its `raw/sources/` prefix to obtain the `entries` key, retaining subdirectories. For example, `raw/sources/folder/article.md` maps to `folder/article.md`, not just `article.md`. Confirm the running version's mapping if its structure differs. A missing cache before the first submission is an empty baseline; a read/parse error is not.
+
+验证时用 `execute_code` 的 `json.load` 读取，与提交前基线比较；等待用独立 `terminal("sleep 30")`。按上述本源 cache 判据即可报告“投递成功（cache 已确认）”，不把摘要正文、frontmatter 回链或 UI 终态设为必达门槛。若 App 暴露额外可读终态或警告则如实附报；否则 cache 是实际最高可验证级。摘要/派生页的事实与质量检查属于独立审查，不扩张本 skill 的成功条件。详见 SKILL.md“投递状态确认”。
+
+## Version-specific processing and recovery
+
+The following mechanisms were reviewed at upstream commit `e8082119649e6a8e1cf85eaf289adcabfdf39d4e`; this does not establish that the installed app uses the same implementation:
+
+- [clip-watcher.ts](https://github.com/nashsu/llm_wiki/blob/e8082119649e6a8e1cf85eaf289adcabfdf39d4e/src/lib/clip-watcher.ts): the watcher enqueues clips for the frontend's current project when an LLM is usable. Passing another projectPath does not by itself guarantee background processing.
+- [clip_server.rs](https://github.com/nashsu/llm_wiki/blob/e8082119649e6a8e1cf85eaf289adcabfdf39d4e/src-tauri/src/clip_server.rs): reading `/clips/pending` drains pending clips; do not poll it as a diagnostic substitute for the app watcher. POST /project updates the server-side project marker, not proof of a frontend switch.
+- [ingest-queue.ts](https://github.com/nashsu/llm_wiki/blob/e8082119649e6a8e1cf85eaf289adcabfdf39d4e/src/lib/ingest-queue.ts): restored work may require Resume, and exhausted failures are retained. 这是机制说明，不是本 skill 自动恢复授权；本 skill 只读排查、建议重启并有界跟进一次，不自动 Resume/Retry、触发 ingest 或重投。
+- [source-identity.ts](https://github.com/nashsu/llm_wiki/blob/e8082119649e6a8e1cf85eaf289adcabfdf39d4e/src/lib/source-identity.ts), [ingest-cache.ts](https://github.com/nashsu/llm_wiki/blob/e8082119649e6a8e1cf85eaf289adcabfdf39d4e/src/lib/ingest-cache.ts), and [ingest.ts](https://github.com/nashsu/llm_wiki/blob/e8082119649e6a8e1cf85eaf289adcabfdf39d4e/src/lib/ingest.ts): source identity, artifact verification and task completion are distinct. Non-empty filesWritten can lack the source summary, and cache precedes optional embeddings.
+
+`POST /project` 不证明前端切换，但不是投递前 UI 核验要求；没有 cache 证据时才把项目不匹配作为首要嫌疑。约 3 分钟后排查项目、LLM 配置和 worker，建议重启并跟进一次，仍无证据就报告现状收尾。不要发明端点或将未知格式视为空 queue/cache。禁止重复 POST 探测；用户显式要求重投时只执行其已授权的新投递，并单独记录。技术机制不改变 SKILL.md 的操作边界。

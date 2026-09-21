@@ -1,24 +1,25 @@
 # llm-wiki-import
 
-A Hermes Agent skill for importing articles, web pages, and local files into [LLM Wiki](https://github.com/nicepkg/llm-wiki) via the built-in clip server API.
+A Hermes Agent skill for delivering ready content into [LLM Wiki](https://github.com/nashsu/llm_wiki) via the clip server API or a requested native file-import route.
 
 ## What It Does
 
-LLM Wiki is a Tauri desktop app that turns Markdown files into an AI-searchable knowledge base. It embeds a small HTTP server (clip server) for the Chrome Web Clipper extension. This skill uses that same API to let Hermes Agent import content programmatically — a single `POST /clip` call handles file creation and auto-triggers the AI ingest pipeline.
+本 skill 只将就绪内容原样投递到 LLM Wiki。POST ok 表示受理；本源 cache 记录相对提交前新增或更新且 filesWritten 非空，即为“投递成功（cache 已确认）”。不要求 CLI 读取 UI 终态，不承诺摘要或内容质量。
 
 Features:
 - First-time setup with guided configuration
 - Dynamic project detection (new knowledge bases are auto-recognized)
-- Web page content extraction via browser automation
-- Local file import
-- Clipboard content import
-- Ingest progress verification
+- Delivery of prepared web/pasted content
+- Native local file import when requested
+- 本源 cache 验证、只读排查和有界异常上报
+
+Extraction belongs to `x-content-extraction` / `web-access`; optional composition and fact-checking belong to `wiki-draft-composition`. `wiki-output-review` provides separate read-only checks of generated facts, provenance and links. Delivery success is not a content-quality judgment; a ready draft does not itself authorize importing it.
 
 ## Requirements
 
 - [Hermes Agent](https://github.com/nicepkg/hermes) installed and configured
-- [LLM Wiki](https://github.com/nicepkg/llm-wiki) desktop app installed and running
-- LLM Wiki clip server accessible (default: `http://127.0.0.1:19827`)
+- [LLM Wiki](https://github.com/nashsu/llm_wiki) desktop app installed and running
+- For API delivery, LLM Wiki clip server accessible (default: `http://127.0.0.1:19827`)
 
 ## Installation
 
@@ -40,10 +41,10 @@ After installation, the skill activates automatically when you ask Hermes to imp
 
 ### First Time
 
-On first use, the agent will guide you through setup:
+On first API use, the agent will guide you through setup (native file import skips clip-server setup):
 1. Checks if LLM Wiki is running
 2. Lists your existing projects
-3. Sends a test clip to verify the pipeline
+3. Optionally tests in a test project; otherwise verifies the first real import without a synthetic clip
 4. Saves configuration to `~/.llm-wiki-import.json`
 
 ### Import Examples
@@ -103,10 +104,10 @@ llm-wiki-import/
 1. Agent checks `~/.llm-wiki-import.json` for config
 2. If not configured → runs first-time setup
 3. Fetches project list from `GET /projects`
-4. Acquires content from the specified source (web, file, clipboard)
-5. Sends to `POST /clip` with title, content, URL, and target project path
-6. Clip server writes file and auto-triggers AI ingest
-7. Agent verifies processing completed via ingest queue
+4. Receives ready content from the user or extraction/composition skills
+5. 投递前只读查同 URL，命中则警告并继续；write_file 落盘 JSON 后用 curl -d @文件提交一次，用户指定原生文件入口时不替换路线
+6. 独立 sleep 后用 execute_code/json.load 验证本源新增或更新的 cache 记录及非空 filesWritten
+7. 约 3 分钟无证据则排查项目匹配、LLM 配置和 worker，建议重启并有界跟进一次后报告；不自动重投或重触发 ingest
 
 ## Troubleshooting
 
@@ -114,8 +115,8 @@ llm-wiki-import/
 |-------|----------|
 | "Connection refused" | Open LLM Wiki app first |
 | "No projects found" | Create a project in LLM Wiki UI |
-| Ingest stuck at "processing" | Wait 2-3 min; auto-retries up to 3 times |
-| "Generation failed" | Content may be too long; try smaller clips |
+| Ingest stuck at "processing" | 只读排查，建议重启，有界跟进一次后报告；不自动恢复或重投 |
+| "Generation failed" | Record the actual error; hand necessary content revision/splitting to the composition skill |
 | Wrong port | Update `clipServerUrl` in `~/.llm-wiki-import.json` |
 
 ## License

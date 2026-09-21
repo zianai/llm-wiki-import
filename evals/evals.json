@@ -4,19 +4,19 @@
     {
       "id": 0,
       "prompt": "帮我把这篇文章导入 LLM Wiki: https://zread.ai/Panniantong/Agent-Reach",
-      "expected_output": "Agent should navigate to the URL, extract content via browser_console, get project list from clip server, and POST /clip to import. Should check for ~/.llm-wiki-import.json config first.",
+      "expected_output": "URL 尚非就绪正文时交上游取得内容，本 skill 不提取或加工。收到就绪内容后查状态、projects 选项目，只读查同 URL 并警告后继续；留存 cache 基线，write_file 落盘 JSON，curl -d @文件 POST 一次。独立 sleep 后用 execute_code/json.load 验证本源新增或更新记录及非空 filesWritten，即报告 cache 已确认的投递成功，不要求事前 UI 切换确认或可读终态。",
       "files": []
     },
     {
       "id": 1,
       "prompt": "把 ~/Downloads/meeting-notes.md 这个文件导入到我的知识库",
-      "expected_output": "Agent should read the local file, check config, get projects from API, and POST /clip with the file content. Should use current project if user doesn't specify.",
+      "expected_output": "原样传送就绪文件内容，不重组稿、不 trim 或改换行；title 取指定值、首个一级标题或文件名，url 无则空。使用 projects 返回的当前项目并保留文件式 payload。若用户指定应用原生文件解析，不转成 Markdown 或 POST 冒充。按本源新 cache 与非空 filesWritten 确认投递，不把该状态当作质量验收。",
       "files": []
     },
     {
       "id": 2,
       "prompt": "我有多个知识库项目，帮我把这段内容导入到 Work Notes 项目：人工智能（AI）是计算机科学的一个分支，旨在创建能够执行通常需要人类智能的任务的系统。",
-      "expected_output": "Agent should get project list, find 'Work Notes' project path, and POST /clip with the content to that specific project. Should NOT hardcode any paths.",
+      "expected_output": "从 projects 解析 Work Notes 路径，不硬编码，不要求 POST 前 UI 验证；原样提交给定内容，不因短文补字或加工。去重只警告并继续；POST projectPath 不证明前端切换。约 3 分钟仍无本源新 cache 及非空 filesWritten 时，排查项目匹配、LLM 配置、worker，建议重启并有界跟进一次后报告实际状态，不自动重投、Retry/Resume 或触发 ingest。",
       "files": []
     }
   ]
