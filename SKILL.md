@@ -1,7 +1,7 @@
 ---
 name: llm-wiki-import
 description: 导入到 wiki：原样投递就绪内容并确认 LLM Wiki 投递状态。
-version: 3.11.0
+version: 3.11.1
 ---
 
 # LLM Wiki 原样投递
@@ -71,6 +71,7 @@ with open(cache_path, encoding="utf-8") as f:
 
 - 提交前留存基线，提交后只匹配本次返回的源身份；常见结构为 `cache["entries"][源身份]`。例如 `raw/sources/folder/a.md` 对应 `folder/a.md`，不能仅按标题或 basename 匹配。
 - 本源记录相对基线**新增或更新**，且 `filesWritten` 为非空列表，就是本 skill 的投递成功判据。不增加摘要正文、frontmatter 回链或全局队列为空等门槛。
+- App「原始资料」界面的已摄取标记来自前端快照（sources-view 挂载时读一次，之后只在 dataVersion 变化时重拉）；外部 POST 投递完成后该标记可能仍显示「未摄取」，这不是投递失败——以本源 cache 记录为准，并向用户说明刷新面板或重启 App 即可更新显示，不据此重投。
 - 只有 POST `ok`：报告“已受理，尚无本源 cache 证据”；存在旧记录但未更新，不算本次成功。读不到 cache、JSON 解析失败或版本格式未知，均明确报告证据不足，不能当空文件或成功。
 - App 若额外暴露可读的本源终态，可一并报告；没有则 cache 即实际最高可验证级，不把 CLI 读不到的 UI 终态设为必达目标。成功口径仅指投递及 cache 确认，不承诺语义正确、摘要完整或全部后台任务完成；若另有失败/警告记录也如实附上。
 - 若 `execute_code` 被审批门阻塞，可用可用的只读 `search_files`／`read_file` 获取本源记录；片段不足以判断新旧或 `filesWritten` 时报告未验证，不以工具受阻为由重投。
