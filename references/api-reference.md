@@ -310,6 +310,8 @@ Retry and retention behavior is version-dependent. In the fixed source revision 
 
 For the documented source-identity format, normalize the POST response path and remove its `raw/sources/` prefix to obtain the `entries` key, retaining subdirectories. For example, `raw/sources/folder/article.md` maps to `folder/article.md`, not just `article.md`. Confirm the running version's mapping if its structure differs. A missing cache before the first submission is an empty baseline; a read/parse error is not.
 
+Observed 2026-09-22 (app self-reporting 0.1.0): when a file with identical content already existed in `raw/sources/` before the POST (a hand-written draft), the ingest-cache entry's key and `hash` identified that pre-existing file, while the server-side slug copy written by POST /clip was neither enqueued nor ingested (queue stayed empty, single cache record). The cache key behaved content-addressed in this run. Practical rule: when the normalized POST response path has no matching `entries` key, compare the record `hash` against sha256 of candidate source files and report the actually ingested identity instead of assuming failure or re-POSTing. The slug copy itself is documented server-side behavior (step 3 above); a resulting on-disk duplicate is a maintenance concern, not a delivery failure.
+
 验证时用 `execute_code` 的 `json.load` 读取，与提交前基线比较；等待用独立 `terminal("sleep 30")`。按上述本源 cache 判据即可报告“投递成功（cache 已确认）”，不把摘要正文、frontmatter 回链或 UI 终态设为必达门槛。若 App 暴露额外可读终态或警告则如实附报；否则 cache 是实际最高可验证级。摘要/派生页的事实与质量检查属于独立审查，不扩张本 skill 的成功条件。详见 SKILL.md“投递状态确认”。
 
 ## Version-specific processing and recovery
